@@ -1,0 +1,129 @@
+esphome:
+  name: campainha_botao
+  platform: ESP32
+  board: esp32doit-devkit-v1
+  on_boot:
+    then:
+      - lambda: |-
+          id(status_msg) = "     Aguardando     ";
+
+globals:
+  - id: delay_bell
+    type: int
+    restore_value: no
+    initial_value: '40000'
+
+  - id: status_msg
+    type: std::string
+    restore_value: no
+
+captive_portal:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  manual_ip:
+    static_ip: 192.168.28.24
+    gateway: 192.168.28.1
+    subnet: 255.255.255.0
+  ap:
+    ssid: Campainha Botao
+    password: !secret ap_password
+
+logger:
+
+ota:
+
+i2c:
+  sda: 21
+  scl: 22
+
+script:
+   - id: ring_bell
+     then:
+        - globals.set:
+            id: status_msg
+            value: '" **  CAMPAINHA  **  "'
+
+        - binary_sensor.template.publish:
+            id: campainha_entrada
+            state: true
+
+        - switch.turn_on: interruptor_campainha
+
+        - delay: 2s
+
+        - switch.turn_off: interruptor_campainha   
+
+        - globals.set:
+            id: status_msg
+            value: '"    ANTIAGONIADO    "'
+
+        - delay: !lambda 'return id(delay_bell);'
+
+        - globals.set:
+            id: status_msg
+            value: '"     Aguardando     "'
+
+        - binary_sensor.template.publish:
+            id: campainha_entrada
+            state: false
+
+text_sensor:
+  - platform: wifi_info
+    ssid:
+      id: botao_campainha_wifi_ssid
+      name: SSID
+      internal: true
+    ip_address:
+      id: botao_campainha_ip_address
+      name: Endereço IP
+      internal: true
+
+display:
+  - platform: lcd_pcf8574
+    dimensions: 20x4
+    address: 0x3F
+    update_interval: 1s
+    lambda: |-
+      it.printf(0, 0, " Wifi: %s", id(botao_campainha_wifi_ssid).state.c_str());
+      it.printf(0, 1, "   %s", id(botao_campainha_ip_address).state.c_str());
+      it.strftime(0, 2, "%d.%m.%Y %H:%M:%S", id(current_time).now());
+      it.printf(0, 3, "%s", id(status_msg).c_str());
+
+mqtt:
+  broker: 192.168.25.18
+  username: mqtt
+  password: animal
+  client_id: campainha_botao
+
+time:
+  - platform: sntp
+    id: current_time
+
+switch:
+  - platform: gpio
+    name: "Interruptor Campainha"
+    id: interruptor_campainha 
+    pin: GPIO33
+
+binary_sensor:
+  - platform: status
+    name: "Campainha Entrada Status"
+
+  - platform: template
+    id: campainha_entrada
+    device_class: power
+
+  - platform: gpio
+    internal: true
+    pin: 
+      number: GPIO26
+      mode: INPUT_PULLUP
+    name: "Campainha da Entrada"
+    filters:
+      - delayed_on: 10ms    
+    on_press:
+      then:
+        - script.execute: ring_bell
+        - script.wait: ring_bell
